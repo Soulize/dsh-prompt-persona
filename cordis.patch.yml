@@ -1,0 +1,6 @@
+# dsh-prompt-persona bundle patch：把插件挂载进 profile 的 layer 栈。
+# 运行时默认值走插件 config 边界；用户可在自己的 profile cordis.patch.yml
+# 里用同一 id 覆盖（但通常用设置页即可，无需改这里）。
+- insert:
+    - id: prompt-persona
+      name: '@xilin3/dsh-prompt-persona'
