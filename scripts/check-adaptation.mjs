@@ -81,10 +81,15 @@ await test('applyPersona：replace / append / off 与 shadow 守卫', () => {
 })
 
 await test('deploymentPersonaPrefix 从提示词注册表 entry 读到部署层原文', () => {
-  const ctx = { loader: { entries: () => [{ options: { name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: 'deploy' } } }] } }
-  assert.equal(deploymentPersonaPrefix(ctx), 'deploy')
+  const entries = () => [{ options: { name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: 'deploy' } } }]
+  // 0.1.7 的可选服务读法（非硬依赖服务用 ctx.get）
+  assert.equal(deploymentPersonaPrefix({ get: (name) => (name === 'loader' ? { entries } : undefined) }), 'deploy')
+  // 退回属性访问
+  assert.equal(deploymentPersonaPrefix({ loader: { entries } }), 'deploy')
   assert.equal(deploymentPersonaPrefix({ loader: { entries: () => [] } }), undefined)
   assert.equal(deploymentPersonaPrefix({}), undefined)
+  // get 抛错（服务不存在）时不应炸
+  assert.equal(deploymentPersonaPrefix({ get: () => { throw new Error('nope') } }), undefined)
 })
 
 /* ------------------------------------------------- 用假 ctx 跑一遍 apply() */
