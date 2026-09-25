@@ -80,12 +80,18 @@ await test('applyPersona：replace / append / off 与 shadow 守卫', () => {
   assert.equal(applyPersona(sections, { persona: '', mode: 'replace' }, false), sections)
 })
 
-await test('deploymentPersonaPrefix 从提示词注册表 entry 读到部署层原文', () => {
+await test('deploymentPersonaPrefix：loader / configEditor 两条来源 + 拿不到时不判定', () => {
   const entries = () => [{ options: { name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: 'deploy' } } }]
   // 0.1.7 的可选服务读法（非硬依赖服务用 ctx.get）
   assert.equal(deploymentPersonaPrefix({ get: (name) => (name === 'loader' ? { entries } : undefined) }), 'deploy')
   // 退回属性访问
   assert.equal(deploymentPersonaPrefix({ loader: { entries } }), 'deploy')
+  // loader 拿不到时用 configEditor.configuration()（dsh-settings 走的同一面）
+  const editor = { configuration: () => [{ entry: { options: { name: '@deepseek-ai/dsh-system-prompt', config: { personaPrefix: 'via-editor' } } } }] }
+  assert.equal(deploymentPersonaPrefix({ get: (name) => (name === 'configEditor' ? editor : undefined) }), 'via-editor')
+  // 没有 personaPrefix 字段 → 空串（部署层确实没有 persona），不是 undefined
+  assert.equal(deploymentPersonaPrefix({ loader: { entries: () => [{ options: { name: '@deepseek-ai/dsh-system-prompt', config: {} } }] } }), '')
+  // 完全拿不到 → undefined（无法判定）
   assert.equal(deploymentPersonaPrefix({ loader: { entries: () => [] } }), undefined)
   assert.equal(deploymentPersonaPrefix({}), undefined)
   // get 抛错（服务不存在）时不应炸

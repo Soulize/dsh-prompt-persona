@@ -48,7 +48,8 @@
   },
   "scripts": {
     "link-deps": "node scripts/link-deps.mjs",
-    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/web.js && node --check lib/client.js && node scripts/check-adaptation.mjs"
+    "check": "node --check lib/index.js && node --check lib/config.js && node --check lib/web.js && node --check lib/client.js && node scripts/check-adaptation.mjs",
+    "check:integration": "node scripts/check-integration.mjs"
   },
   "license": "MIT",
   "repository": {

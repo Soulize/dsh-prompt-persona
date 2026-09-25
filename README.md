@@ -170,7 +170,15 @@ TypeError: z.string(...).volatile is not a function
 npm run check     # node --check 四个 lib 文件 + scripts/check-adaptation.mjs
 ```
 
-`check-adaptation.mjs` 会用**真实的 DSH 0.1.7 包**跑一遍 host 半身：Config 的 volatile 契约、注入语义、遮蔽守卫、`settings.describe()/update()` 往返、乐观锁冲突与只读降级。
+`check-adaptation.mjs` 会用**真实的 DSH 0.1.7 包**跑一遍 host 半身（17 项）：Config 的 volatile 契约、注入语义、遮蔽守卫、`settings.describe()/update()` 往返、乐观锁冲突与只读降级、client 半身的 slot/configForms 约定。
+
+还可以把插件挂进**真实的提示词注册表**跑集成自检（需要能读到 DSH 宿主包目录）：
+
+```bash
+DSH_HARNESS_PACKAGES=/path/to/node_modules/@deepseek-ai npm run check:integration
+```
+
+它用真实的 `cordis` + `dsh-system-prompt` 起一个最小 app，验证 replace 注入、**volatile 就地更新**（cordis-plugin-loader 只改 volatile 字段时不重挂插件，而是把新值写进同一个引用 —— 所以插件必须每次现读 `config.persona.get()`）、遮蔽守卫、`off` / `append` 语义。读不到包目录时脚本会打印说明并跳过（退出码 0）。
 
 ---
 
@@ -287,7 +295,8 @@ dsh-prompt-persona/
 ├── cordis.patch.yml            # bundle patch：insert.id 即 settings entry id
 ├── scripts/
 │   ├── link-deps.mjs           # 准备宿主依赖（能力校验 + app.asar 回退）
-│   └── check-adaptation.mjs    # 适配自检（拿真实 0.1.7 包跑 host 半身）
+│   ├── check-adaptation.mjs    # 适配自检（拿真实 0.1.7 包跑 host 半身）
+│   └── check-integration.mjs   # 集成自检（挂进真实提示词注册表）
 ├── lib/
 │   ├── index.js                # host 插件：设置页策略 + waterfall 注入 + 遮蔽守卫
 │   ├── config.js               # 本条目 Config（volatile）+ live()/resolveConfig()
