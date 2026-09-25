@@ -1,6 +1,13 @@
 # dsh-prompt-persona bundle patch：把插件挂载进 profile 的 layer 栈。
-# 运行时默认值走插件 config 边界；用户可在自己的 profile cordis.patch.yml
-# 里用同一 id 覆盖（但通常用设置页即可，无需改这里）。
+#
+# `id` 有两个身份，改动前请同步 lib/config.js 的 SETTINGS_NAMESPACE：
+#   1. loader entry id（本条目在 profile 里的地址）
+#   2. DSH 0.1.7 起的 **settings 命名空间** —— 设置表单与 `settings.update()`
+#      都以 entry id 定位插件，两者不一致会让设置页读不到/写不进本条目。
+#
+# 运行时默认值走插件自己的 Config 边界（见 lib/config.js，两个字段都是 volatile）；
+# 用户也可以在自己的 profile cordis.patch.yml 里用同一 id 覆盖 config，
+# 但通常直接用设置页即可。
 - insert:
     - id: prompt-persona
       name: '@xilin3/dsh-prompt-persona'

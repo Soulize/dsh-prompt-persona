@@ -7,24 +7,40 @@
 
 > 在 Harness 的系统提示词组装模型里，部署 persona 是唯一一段「由配置/部署作者撰写」的片段（order `0`）。本插件接管这段片段，把它变成设置页里可直接编辑、可预览、可持久化的内容，而无需改动 Harness 本体或手写 `cordis.patch.yml`。
 
-**当前版本：0.2.0 — 已适配 DSH `0.1.5-rc.1`。** 兼容性改动见下方「版本适配」。
+**当前版本：0.3.0 — 已适配 DSH `0.1.7-rc.2`。** 兼容性改动见下方「版本适配」。
 
 ---
 
-## 版本适配（0.1.5-rc.1）
+## 版本适配（0.1.7-rc.2）
 
-上游把单个 `deployment:persona` section 拆成了 prefix / suffix 两段，并重命名了一批包。本版本据此改写：
+DSH 0.1.7 重做了设置（settings）的持久化模型：**插件不再自报 settings namespace**，而是由自己的
+Config schema 出表单，namespace 就是 profile 里这条 loader entry 的 **id**。本版本据此改写：
 
-| 断裂点 | 旧版（≤ 0.1.x 早期） | 现版本（0.1.5-rc.1） | 本插件的处理 |
+| 断裂点 | 0.1.5-rc.x | 现在（0.1.7-rc.2） | 本插件的处理 |
 | --- | --- | --- | --- |
-| persona section | `PERSONA_SECTION = 'deployment:persona'` | 拆成 `deployment:persona-prefix`（order 0，身份）与 `deployment:persona-suffix`（order 10200，收尾） | 只接管 **prefix**（suffix 由部署配置保留，例如 `Your working directory is {{cwd}}.`） |
-| schema 包 | `schemastery` | `@deepseek-ai/schemastery` | 改 import |
-| settings 写入 | `settings.replace(ns, section)` | `replace` 会整段覆盖；`update` 只合并补丁 | 改用 `settings.update`，**非破坏性**：用户 section 里其它历史字段（如旧版留下的 `prompts` 数组）原样保留 |
-| client 依赖声明 | `dsh.client.inject` 含 `@deepseek-ai/dsh-client-runtime`、`dsh-client-ui-slots` | 这两个包已不存在 | 收敛为 `["@deepseek-ai/dsh-client-ui-settings"]` |
-| 运行时依赖解析 | 依赖 profile 的 node_modules | profile 的 `node_modules/@deepseek-ai/` 是空的 | 包内自带 `node_modules` junction（`scripts/link-deps.mjs`） |
-| agent preset 冲突 | 不存在 | preset 可用同名 section 在 scope 内**遮蔽**部署 persona | 加了遮蔽守卫：只有当该 section 的文本等于部署层自己的配置值时才会被改写 |
+| 声明设置项 | `ctx.settings.register(ns, schema, opts)` | **该 API 已移除**；改为插件导出 `Config`，表单只投影 `.volatile()` 字段 | `Config` 两个字段都改成 `.volatile()`，`SETTINGS_NAMESPACE` 等于 `cordis.patch.yml` 里的 `insert.id`（`prompt-persona`） |
+| 读自己的值 | `scope.get()` | 插件保留 Config 的 **volatile 引用**并 `.get()`（`dsh-agent-default-model` 同款写法） | `config.js` 的 `live()` 同时接受引用与普通值，`resolveConfig()` 每次组装现读 |
+| 读设置页快照 | `settings.describe()` + `scope.get()` | `settings.describe()` 返回的就是表单投影值（`ns` = entry id） | `web.js` 从描述符取 `value`/`revision`/`applies`，settings 缺席时回落插件 Config |
+| 设置页归属 | 无此概念 | 自带页面的插件要在 `ctx.inject(['settings'], …)` 子级里 `settings.configure({ auto: false }, ctx.fiber)`，否则会再长出一个自动生成的页面 | 已按官方写法登记 |
+| settings 依赖 | 硬依赖 `inject: ['settings', …]` | settings 是**可选**服务（业务插件可以没有它照常跑） | 从 `inject` 去掉，改用 `ctx.get('settings')`；未挂载时仍能用 profile 配置注入 persona，只是不能保存 |
+| client 端页面 | `ctx.slots` 直接注册即可 | 设置域多了 `configForms`；跨命名空间表面用 `configForms.whileServed(namespaces, register)` 跟随 | 页面改为 `inject = ['slots', 'configForms']` + `whileServed(['prompt-persona'], …)`：宿主没挂 settings 时页面上不留痕迹 |
+| 默认模型 | `settings.get('agent-default-model')` | 该 namespace 已不存在，改由 `agentDefaultModel` 服务回答 | 预览回落改用 `ctx.get('agentDefaultModel').currentSelection()` |
+| 依赖解析 | `@deepseek-ai/schemastery` 任意 3.x | `.volatile()` 由 **schemastery ≥ 3.18.4** 提供（`dsh-settings` 的 peer 要求 `~3.18.4`） | `scripts/link-deps.mjs` 现在会**逐个校验**依赖能力：不合格就换来源，必要时直接从 DSH Desktop 的 `app.asar` 里解出正确的 schemastery |
+| 持久化位置 | `$DSH_HOME/settings.yaml` | 当前 profile 的 Cordis patch（由 `dsh-config-editor` 落盘）；旧的 `settings.yaml` 同名 section 会被**导入一次**后改名为 `settings.yaml.imported` | 无需手工迁移：原来的 `prompt-persona:` section 会被导入到同名 entry |
 
-其余行为（注入模式、预览、乐观锁、HTTP API）与旧版一致。
+旧的 `settings.yaml` section 名与 entry id 同名（`prompt-persona`），所以从 0.2.x 升级**不需要重新填 persona**。
+
+### 历史适配（0.1.5-rc.1）
+
+上游把单个 `deployment:persona` section 拆成了 prefix / suffix 两段，并重命名了一批包：
+
+| 断裂点 | 旧版（≤ 0.1.x 早期） | 0.1.5-rc.1 | 本插件的处理 |
+| --- | --- | --- | --- |
+| persona section | `PERSONA_SECTION = 'deployment:persona'` | 拆成 `deployment:persona-prefix`（order 0，身份）与 `deployment:persona-suffix`（order 10200，收尾） | 只接管 **prefix**（suffix 由部署配置保留） |
+| schema 包 | `schemastery` | `@deepseek-ai/schemastery` | 改 import |
+| settings 写入 | `settings.replace(ns, section)` | `replace` 会整段覆盖；`update` 只合并补丁 | 改用 `settings.update`，**非破坏性** |
+| client 依赖声明 | `dsh.client.inject` 含 `@deepseek-ai/dsh-client-runtime`、`dsh-client-ui-slots` | 这两个包已不存在 | 收敛为 `["@deepseek-ai/dsh-client-ui-settings"]` |
+| agent preset 冲突 | 不存在 | preset 可用同名 section 在 scope 内**遮蔽**部署 persona | 遮蔽守卫：只有该 section 文本等于部署层配置值时才会被改写 |
 
 ---
 
@@ -48,7 +64,7 @@
 | --- | --- |
 | 注入模式 | 下拉选择 替换 / 追加 / 关闭 |
 | 自定义提示词 | 多行文本域，persona 内容，支持模板变量 |
-| 保存并应用 / 预览效果 | 持久化到 `settings.yaml`；或仅预览草稿效果 |
+| 保存并应用 / 预览效果 | 持久化到当前 profile 的配置；或仅预览草稿效果 |
 | 当前提示词 | 当前生效的完整系统提示词（只读） |
 | 添加效果（预览） | 草稿应用后的完整提示词（点击「预览效果」后出现） |
 
@@ -57,7 +73,7 @@
 ## 工作原理
 
 ```text
-settings.yaml                    HTTP 路由
+本条目 Config（volatile）              HTTP 路由
   prompt-persona ──────────────► /_dsh/prompt-persona/settings
        │  (persona, mode)              ▲
        ▼                               │ GET snapshot / POST preview|save
@@ -67,10 +83,12 @@ system-prompt/assemble waterfall ──────┘
 完整系统提示词（每步动态组装）
 ```
 
-1. **宿主插件**（`lib/index.js`）注册 settings namespace `prompt-persona`，并监听全局 `system-prompt/assemble` waterfall；每次组装完成后，把设置里的 persona 按 mode 写入 `deployment:persona-prefix` section。
+1. **宿主插件**（`lib/index.js`）导出自己的 `Config`（两个 `.volatile()` 字段），并监听全局 `system-prompt/assemble` waterfall；每次组装完成后，把配置里的 persona 按 mode 写入 `deployment:persona-prefix` section。
    - 写入前先读一次提示词注册表自己的 composition config（`personaPrefix`）：若装配结果里该 section 的文本与之不符，说明它被更高优先级的 scope 遮蔽了（agent preset / 子 agent persona），此时**放弃改写**。
-2. **HTTP 后端**（`lib/web.js`）在同源挂一个路由，向浏览器提供当前提示词、预览、保存三个能力。
-3. **浏览器插件**（`lib/client.js`）通过 `settings.section` slot 注入 React 设置面板。
+2. **HTTP 后端**（`lib/web.js`）在同源挂一个路由，向浏览器提供当前提示词、预览、保存三个能力；保存走 `settings.update(entryId, patch, revision)`。
+3. **浏览器插件**（`lib/client.js`）用 `configForms.whileServed(['prompt-persona'], …)` 跟随本条目，并通过 `settings.section` slot 注入 React 设置面板。
+
+> 设置页归属：`apply()` 里用 `ctx.inject(['settings'], …)` 子级登记 `settings.configure({ auto: false }, ctx.fiber)`，关掉 dsh-settings 按 schema 自动生成的通用页面，由本插件的自定义页面接管。
 
 ---
 
@@ -119,20 +137,40 @@ dsh plugin --profile web add github:xilin3/dsh-prompt-persona
 
 把仓库放到 profile 目录（例如 `~/.dsh/profiles/web/dsh-prompt-persona`），在 profile `package.json` 里写 `"@xilin3/dsh-prompt-persona": "file:dsh-prompt-persona"` 并加进 `bundles`。
 
-### 装完必做：链接宿主依赖
+### 装完必做：准备宿主依赖
 
-宿主半身 `import` 了 `@deepseek-ai/dsh-system-prompt` 与 `@deepseek-ai/schemastery`，而 profile 的 `node_modules/@deepseek-ai/` 通常是空的 —— 依赖必须能从**插件包自己的 `node_modules`** 解析出来：
+宿主半身 `import` 了 `@deepseek-ai/dsh-system-prompt`、`@deepseek-ai/schemastery` 与 `@deepseek-ai/cosmokit`，而 profile 的 `node_modules/@deepseek-ai/` 通常是空的 —— 依赖必须能从**插件包自己的 `node_modules`** 解析出来：
 
 ```bash
 cd <插件目录>
-node scripts/link-deps.mjs        # 自动探测 DSH checkout（或设 DSH_CHECKOUT）
+node scripts/link-deps.mjs        # 自动探测来源，逐个校验能力
 ```
 
-脚本会在 `<插件>/node_modules/@deepseek-ai/` 下建 junction（Windows 下等价于 `mklink /J`）。漏掉这一步的典型报错：
+脚本会在 `<插件>/node_modules/@deepseek-ai/` 下建 junction（Windows 下等价于 `mklink /J`），并打印每个包的实际版本。**它会校验 `schemastery` 是否带 `.volatile()`**：0.1.7 的 settings 只投影 volatile 字段，链到旧版（3.18.2）会导致设置页整个不出现。
+
+**DSH Desktop 用户**：桌面版把宿主包放在安装目录的 `resources/app.asar` 里，脚本能自动从常见安装位置找到它；装在自定义目录（例如 `D:\Deepseekharness`）时显式指一下：
+
+```bash
+node scripts/link-deps.mjs --asar "D:\Deepseekharness\resources\app.asar"
+```
+
+其它来源（按优先级自动尝试）：`$DSH_CHECKOUT` → 桌面版安装目录 → npm 全局安装的 `dsh` → `~/.dsh/profiles/node_modules`。都不满足时脚本会失败并打印可选做法（例如 `npm i -g @deepseek-ai/dsh@0.1.7-rc.2`），而不是静默链上不兼容的版本。
+
+漏掉这一步的典型报错：
 
 ```text
 Cannot find package '@deepseek-ai/dsh-system-prompt'
+# 或者（链到旧 schemastery）
+TypeError: z.string(...).volatile is not a function
 ```
+
+### 自检
+
+```bash
+npm run check     # node --check 四个 lib 文件 + scripts/check-adaptation.mjs
+```
+
+`check-adaptation.mjs` 会用**真实的 DSH 0.1.7 包**跑一遍 host 半身：Config 的 volatile 契约、注入语义、遮蔽守卫、`settings.describe()/update()` 往返、乐观锁冲突与只读降级。
 
 ---
 
@@ -194,24 +232,34 @@ persona 是模板，保存/渲染时执行**严格插值**（未注册的变量�
 
 ## 配置参考
 
-持久化在 `$DSH_HOME/settings.yaml`，namespace 为 `prompt-persona`：
+持久化在当前 profile 的 Cordis patch 里（由 `dsh-config-editor` 落盘），**entry id** 为 `prompt-persona`：
 
 ```yaml
-prompt-persona:
-  persona: |
-    你是一名资深数据分析师。
-    工作目录是 {{cwd}}，模型是 {{model}}。
-  mode: replace        # replace | append | off
+- id: prompt-persona
+  name: '@xilin3/dsh-prompt-persona'
+  config:
+    persona: |
+      你是一名资深数据分析师。
+      工作目录是 {{cwd}}，模型是 {{model}}。
+    mode: replace        # replace | append | off
 ```
 
 | 字段 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| `persona` | string | `""` | 自定义 persona 文本（模板） |
-| `mode` | enum | `"replace"` | `replace` / `append` / `off` |
+| `persona` | string（volatile） | `""` | 自定义 persona 文本（模板） |
+| `mode` | enum（volatile） | `"replace"` | `replace` / `append` / `off` |
 
 非法 `mode` 会被 schema 拒绝（写入侧）/ 归一化为 `replace`（读取侧）；`persona` 会做 `trim`。
 
-> 保存走 `settings.update`：只写 `persona` / `mode` 两个键，section 里其它字段不会被删除（历史版本可能留下 `prompts` 等数组）。
+> **升级说明**：0.1.6 及更早版本把配置写在 `$DSH_HOME/settings.yaml` 的 `prompt-persona:` section。0.1.7 的
+> dsh-settings 会在启动时把这类 section **导入一次**同名 entry，然后把文件改名为 `settings.yaml.imported`
+> ——section 名与 entry id 同名，所以不需要手工迁移。
+
+> 保存走 `settings.update`：只写 `persona` / `mode` 两个键，条目里其它字段不会被删除。
+
+### 直接改配置文件（不经设置页）
+
+`Config` 的两个字段在配置里就是普通字符串；`live()`（`lib/config.js`）对「volatile 引用」和「普通值」都接受，所以用 Cordis 配置写死的部署照样工作 —— 只是设置页会显示为只读（`settings` 未挂载时 `writable: false`）。
 
 ---
 
@@ -221,9 +269,11 @@ prompt-persona:
 
 | 方法 | 请求体 | 说明 |
 | --- | --- | --- |
-| `GET` | — | 返回 `{ settings: {value, revision, applies}, currentPrompt }` |
+| `GET` | — | 返回 `{ settings: {value, revision, applies, writable}, currentPrompt }` |
 | `POST` | `{ action: "preview", persona, mode }` | 返回 `{ previewPrompt }` |
 | `POST` | `{ action: "save", persona, mode, expectedRevision }` | 保存；返回新的 snapshot |
+
+`settings.writable` 为 `false` 表示本部署没有挂 settings 服务（或其为只读），此时设置页仍可预览但不能保存。
 
 保存带 `expectedRevision`（乐观锁）：revision 不匹配时返回 HTTP `409`（`code: "settings-conflict"`），客户端需重新加载后重试。
 
@@ -233,14 +283,16 @@ prompt-persona:
 
 ```text
 dsh-prompt-persona/
-├── package.json          # dual-face 包：dsh.bundle.patch + dsh.client.inject
-├── cordis.patch.yml      # bundle patch：把插件插入 profile layer 栈
-├── scripts/link-deps.mjs # 链接宿主依赖（@deepseek-ai/dsh-system-prompt / schemastery）
+├── package.json                # dual-face 包：dsh.bundle.patch + dsh.client
+├── cordis.patch.yml            # bundle patch：insert.id 即 settings entry id
+├── scripts/
+│   ├── link-deps.mjs           # 准备宿主依赖（能力校验 + app.asar 回退）
+│   └── check-adaptation.mjs    # 适配自检（拿真实 0.1.7 包跑 host 半身）
 ├── lib/
-│   ├── index.js          # host 插件：settings 注册 + waterfall 注入 + 遮蔽守卫
-│   ├── config.js         # settings schema（@deepseek-ai/schemastery）
-│   ├── web.js            # HTTP 后端（snapshot / preview / save）
-│   └── client.js         # 浏览器设置 UI（CommonJS + window.__ModuleLoader__）
+│   ├── index.js                # host 插件：设置页策略 + waterfall 注入 + 遮蔽守卫
+│   ├── config.js               # 本条目 Config（volatile）+ live()/resolveConfig()
+│   ├── web.js                  # HTTP 后端（snapshot / preview / save）
+│   └── client.js               # 浏览器设置 UI（CommonJS + window.__ModuleLoader__）
 ├── README.md
 └── LICENSE
 ```
@@ -253,11 +305,13 @@ dsh-prompt-persona/
 
 | 包 | 用途 |
 | --- | --- |
-| `@deepseek-ai/dsh-settings` | settings namespace 注册 / 读写 / revision 并发控制 |
+| `@deepseek-ai/dsh-settings`（可选） | 设置表单投影 / 写入 / revision 并发控制；未挂载时插件仍能靠配置注入 persona |
 | `@deepseek-ai/dsh-system-prompt` | `PERSONA_PREFIX_SECTION`、`renderPrompt`、assemble waterfall |
 | `@deepseek-ai/dsh-host-webserver`（可选） | 挂载同源 HTTP 路由 |
-| `@deepseek-ai/dsh-client-ui-settings` | 浏览器端 `settings.section` slot 声明 |
-| `@deepseek-ai/schemastery` | 配置 schema |
+| `@deepseek-ai/dsh-client-ui-settings` | 浏览器端 `settings.section` slot 与 `configForms` |
+| `@deepseek-ai/dsh-client-ui-slots` | 浏览器端 slot 注册（`settings.section`） |
+| `@deepseek-ai/schemastery`（≥ 3.18.4） | 本条目 `Config`；`.volatile()` 是 0.1.7 settings 的硬要求 |
+| `@deepseek-ai/cosmokit` | `isVolatile()`：识别 volatile 引用 |
 | `@deepseek-ai/cordis` / `react` | 运行时由宿主注入 |
 
 ---
