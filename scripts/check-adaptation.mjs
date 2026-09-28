@@ -287,11 +287,15 @@ await test('client 半身使用 0.1.7 的 slots / configForms 约定', () => {
   assert.match(source, /writable === false/, '应处理只读部署')
 })
 
-await test('package.json 声明 0.1.7 的依赖范围与可选 settings', () => {
+await test('package.json 仅保留 DSH 最低版本，不设置上限', () => {
   const pkg = JSON.parse(fs.readFileSync(join(PKG_ROOT, 'package.json'), 'utf8'))
   assert.equal(pkg.peerDependencies['@deepseek-ai/schemastery'], '^3.18.4')
   assert.ok(pkg.peerDependencies['@deepseek-ai/cosmokit'], '需要 cosmokit（isVolatile）')
-  assert.match(pkg.peerDependencies['@deepseek-ai/dsh-system-prompt'], /0\.1\.7/)
+  for (const [name, range] of Object.entries(pkg.peerDependencies)) {
+    if (!name.startsWith('@deepseek-ai/dsh-')) continue
+    assert.equal(range, '>=0.1.7-rc.2', `${name} 应只保留 DSH 最低版本，不得设置最高版本`)
+  }
+  assert.equal(pkg.dsh?.engines?.dsh, '>=0.1.7-rc.2', 'dsh.engines.dsh 应只声明最低版本')
   assert.ok(pkg.peerDependenciesMeta['@deepseek-ai/dsh-settings']?.optional, 'settings 应是可选依赖')
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-settings'))
 })
