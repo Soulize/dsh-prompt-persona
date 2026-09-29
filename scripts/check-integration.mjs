@@ -7,7 +7,7 @@
  *   1. `replace` 注入真的能改到 `deployment:persona-prefix`（真实 waterfall）
  *   2. **volatile 就地更新**：只改 volatile 字段时 cordis-plugin-loader 不重挂插件，
  *      而是 `updateVolatile()` 写进同一个引用 —— 插件必须每次现读 `config.x.get()`
- *   3. 遮蔽守卫：别的 scope 改写了该 section 时插件放手
+ *   3. preset 兼容：别的 scope 改写该 section 时保留其 persona，并追加用户 persona
  *   4. `off` / `append` 语义
  *
  * 需要能读到 DSH 宿主的包目录：
@@ -106,8 +106,8 @@ ok('volatile 就地更新：不重挂插件也能读到新值（必须是引用�
 const offListener = app.on('system-prompt/assemble', async (assembly, _context, next) => withPersona(await next(), 'PRESET-PERSONA'))
 const guarded = await app.systemPrompt.assemble()
 offListener()
-assert.equal(personaOf(guarded), 'PRESET-PERSONA')
-ok('遮蔽守卫：别的 scope 改写了该 section 时放手')
+assert.equal(personaOf(guarded), 'PRESET-PERSONA\n\nLIVE-UPDATED')
+ok('preset 兼容：别的 scope 改写该 section 时保留 preset，并追加用户 persona')
 
 const offApp = await makeApp({ persona: 'IGNORED', mode: 'off' })
 assert.equal(personaOf(await offApp.app.systemPrompt.assemble()), DEPLOY)
