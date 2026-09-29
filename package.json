@@ -47,6 +47,9 @@
     },
     "@deepseek-ai/dsh-host-webserver": {
       "optional": true
+    },
+    "react": {
+      "optional": true
     }
   },
   "scripts": {
