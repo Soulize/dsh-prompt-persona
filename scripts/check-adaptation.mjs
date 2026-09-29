@@ -67,13 +67,15 @@ const section = (text) => ({ name: PERSONA, text, order: 0 })
 const other = { name: 'harness:identity', text: 'identity', order: -1000 }
 const baseAssembly = () => ({ sections: [other, section('deploy')], contexts: [], tools: [], variables: { cwd: 'E:\\work' } })
 
-await test('applyPersona：replace / append / off 与 shadow 守卫', () => {
+await test('applyPersona：replace / append / off 与 preset 兼容追加', () => {
   assert.equal(applyPersona([section('base')], { persona: 'new', mode: 'replace' }, false)[0].text, 'new')
   assert.equal(applyPersona([section('base')], { persona: 'new', mode: 'append' }, false)[0].text, 'base\n\nnew')
   assert.equal(applyPersona([section('')], { persona: 'new', mode: 'append' }, false)[0].text, 'new')
   assert.equal(applyPersona([section('base')], { persona: 'new', mode: 'off' }, false)[0].text, 'base')
-  // 被 preset / 子 agent 遮蔽时不覆盖
-  assert.equal(applyPersona([section('preset')], { persona: 'new', mode: 'replace' }, true)[0].text, 'preset')
+  // 被 preset / 子 agent 遮蔽时保留其 persona，并追加用户 persona；
+  // replace 只针对部署层，不能抹掉 preset 的能力约束。
+  assert.equal(applyPersona([section('preset')], { persona: 'new', mode: 'replace' }, true)[0].text, 'preset\n\nnew')
+  assert.equal(applyPersona([section('preset')], { persona: 'new', mode: 'append' }, true)[0].text, 'preset\n\nnew')
   // 其它 section 原样保留；无改动时返回原数组
   const sections = [other, section('base')]
   assert.deepEqual(applyPersona(sections, { persona: 'new', mode: 'replace' }, false).map((s) => s.name), ['harness:identity', PERSONA])
@@ -199,12 +201,12 @@ await test('apply()：assemble waterfall 把 persona 写进 deployment:persona-p
   assert.equal(assembled.sections.find((s) => s.name === 'harness:identity').text, 'identity')
 })
 
-await test('apply()：agent preset 遮蔽时不覆盖（部署原文 != 组装值）', async () => {
+await test('apply()：agent preset 遮蔽时保留 preset 并追加自定义 persona', async () => {
   const shadowed = { sections: [other, section('preset-persona')], contexts: [], tools: [], variables: {} }
   const ctx = fakeCtx()
   apply(ctx, Config({ persona: '自定义', mode: 'replace' }))
   const assembled = await assembleListener(ctx)(shadowed, {}, async () => shadowed)
-  assert.equal(assembled.sections.find((s) => s.name === PERSONA).text, 'preset-persona')
+  assert.equal(assembled.sections.find((s) => s.name === PERSONA).text, 'preset-persona\n\n自定义')
 })
 
 await test('apply()：mode=off / persona 为空时完全不碰 sections（返回同一个对象）', async () => {
